@@ -109,6 +109,12 @@ td.num, th.num { text-align: right; }
 .steps .cost { display: block; margin-top: 3px; color: var(--muted); font-size: 13px; }
 .risk { margin-top: 14px; padding: 12px 14px; border: 1px solid rgba(240, 180, 41, 0.45); border-radius: var(--radius-control); background: rgba(240, 180, 41, 0.08); color: #f5d67a; font-size: 13px; }
 .note { margin-top: 16px; color: var(--faint); font-size: 13px; }
+/* Note under the detail view's implied-value breakdown: it explains that the
+ * category multiple is shrunk toward the overall fallback when the category was
+ * measured from few tokenized protocols, so a single-sample category cannot
+ * set the whole board. */
+.value-note { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--radius-control); background: var(--canvas); color: var(--muted); font-size: 13px; line-height: 1.6; }
+.value-note b { color: var(--ink); font-weight: 600; }
 @media (max-width: 860px) {
   .shell { padding: 20px 16px 40px; }
   .lede { grid-template-columns: 1fr; }
