@@ -8,8 +8,11 @@
 //
 // Implied value follows only from the snapshot's own figures, never from a hardcoded list of names:
 //
-//   categoryMultiple = median(mcap_usd / tvl_usd) of the tokenized protocols in the same category
-//                      in this snapshot (fallback 0.17 when the category has none, clamped 0.02-1.5)
+//   categoryMultiple = shrunk median(mcap_usd / tvl_usd) of the tokenized protocols in the same
+//                      category in this snapshot: blend the category median with the overall
+//                      fallback, weighted by the category's tokenized sample count, so a category
+//                      seen once (for example one tokenized protocol) cannot set the whole board.
+//                      Fallback 0.17 when the category has none, clamped 0.02-1.5.
 //   base           = tvl_usd x categoryMultiple
 //   growth         = clamp(change_7d, -60, 120) per cent
 //   growthMult     = 1 + (growth / 100) x 0.6
@@ -57,6 +60,8 @@ export interface ModelConstants {
   category_fallback: number;
   category_min: number;
   category_max: number;
+  /** Prior weight (in tokenized protocols) for small-sample shrinkage of a category median. */
+  shrinkage_prior: number;
   chain_step: number;
   chain_cap: number;
 }
@@ -72,12 +77,16 @@ export const MODEL: ModelConstants = {
   category_fallback: 0.17,
   category_min: 0.02,
   category_max: 1.5,
+  shrinkage_prior: 5,
   chain_step: 0.03,
   chain_cap: 1.15,
 };
 
-/** The model's version label: the dashboard names it and the rules quote it. */
-export const MODEL_VERSION = 'radar-2';
+/** The model's version label: the dashboard names it and the rules quote it.
+ *  radar-2 with small-sample shrinkage: category medians are shrunk toward the
+ *  overall fallback by their tokenized sample count (see shrunkMultiple), so a
+ *  category seen once cannot set the whole board. */
+export const MODEL_VERSION = 'radar-2-shrunk';
 
 /** How many pre-token protocols below the watchlist floor the early radar carries, by implied value. */
 export const EARLY_ROWS = 260;
@@ -200,7 +209,8 @@ function median(sorted: number[]): number {
 
 /**
  * One FDV/TVL multiple per category, taken from this snapshot alone: for every category, the
- * median of mcap_usd / tvl_usd across the protocols in that category that already record a token.
+ * median of mcap_usd / tvl_usd across the protocols in that category that already record a token,
+ * shrunk toward the model's fallback by the category's tokenized sample count (shrunkMultiple).
  * A category with no tokenized protocol gets no entry here and falls back to the model's fallback.
  */
 export function categoryMedians(protocols: SnapshotProtocol[], model: ModelConstants): Map<string, number> {
@@ -216,9 +226,25 @@ export function categoryMedians(protocols: SnapshotProtocol[], model: ModelConst
   for (const [key, values] of byCategory) {
     values.sort((a, b) => a - b);
     const m = median(values);
-    out.set(key, Math.min(model.category_max, Math.max(model.category_min, m)));
+    // Shrink the raw median toward the fallback: a category measured from one protocol
+    // (weight 1/(1+5)) keeps only a sixth of its median, a well-measured one keeps most of it.
+    const shrunk = shrunkMultiple(m, values.length, model.category_fallback, model.shrinkage_prior);
+    out.set(key, Math.min(model.category_max, Math.max(model.category_min, shrunk)));
   }
   return out;
+}
+
+/**
+ * Small-sample shrinkage for a category median: blend the category's own median with the
+ * overall fallback, weighted by how many tokenized protocols the category was measured from.
+ * weight = n / (n + prior), so n = 1 gives the median only 1 / (1 + 5) of the weight and the
+ * fallback the rest, while a well-measured category (n = 15 or more) keeps most of its median.
+ * This is computed from the snapshot's own counts alone, never from a protocol's name.
+ */
+export function shrunkMultiple(medianValue: number, sampleCount: number, fallback: number, prior: number): number {
+  const n = Math.max(0, sampleCount);
+  const weight = n / (n + Math.max(0, prior));
+  return weight * medianValue + (1 - weight) * fallback;
 }
 
 /** The category multiple for one protocol: its category's median, or the fallback, clamped. */
